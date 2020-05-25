@@ -343,6 +343,9 @@ export class WorkerThreadManager {
     return id in this.ids_to_jobs;
   }
 
+  /**
+   * Get stats about worker pool {slug}.
+   */
   stats(slug: string) {
     const data = this.slug_to_data[slug];
     if (!data) {
@@ -352,6 +355,8 @@ export class WorkerThreadManager {
     return {
       worker_count: data.pool.length,
       active: data.pool.filter(e => e.state === 'running').length,
+      stopped: data.pool.filter(e => e.state !== 'running').length,
+      job_counts: data.pool.map(e => e.jobs.size),
       minimum_load: data.pool.reduce((prev, cur) => prev < cur.jobs.size ? prev : cur.jobs.size, 0),
       maximum_load: data.pool.reduce((prev, cur) => prev > cur.jobs.size ? prev : cur.jobs.size, 0),
       average_load: data.pool.reduce((sum, cur) => sum += cur.jobs.size, 0) / data.pool.length,
@@ -418,6 +423,24 @@ export class WorkerThreadManager {
     for (const worker of pool) {
       this.kill(worker);
     } 
+  }
+
+  /**
+   * Wait every task associated to this worker pool to end.
+   */
+  async wait(slug: string) {
+    const data = this.slug_to_data[slug];
+    if (!data) {
+      return;
+    }
+
+    // Get all associated task ids
+    const tasks_ids = Array<string>().concat(...data.pool.map(e => [...e.jobs]));
+    // Get the task objets
+    const tasks = tasks_ids.map(e => this.ids_to_jobs[e]).filter(e => e);
+
+    // Await every task and ignore their errors
+    await Promise.all(tasks.map(e => e.catch(() => {})));
   }
 
   /**
