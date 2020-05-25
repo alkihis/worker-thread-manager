@@ -10,6 +10,7 @@ export interface WorkerSettings {
 export interface ExtendedWorker extends Worker {
   online: Promise<void>;
   is_online: boolean;
+  uuid: string;
 }
 
 export interface ThreadPromise<T> extends Promise<T> {

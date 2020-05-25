@@ -20,6 +20,7 @@ export class WorkerThreadManager {
 
   protected ids_to_jobs: { [uuid: string]: ThreadPromise<any> } = {};
   protected slug_to_data: { [slug: string]: PoolData } = {};
+  public log_level: 'none' | 'debug' | 'silly' = 'none';
 
 
   /* GETTERS */
@@ -191,6 +192,8 @@ export class WorkerThreadManager {
 
     // Assign a listener on Promise end (whatever its status)
     result.finally(() => {
+      this.log('silly', `Task #${id} has finished.`);
+
       // Remove the job reference
       delete this.ids_to_jobs[id];
 
@@ -202,6 +205,7 @@ export class WorkerThreadManager {
     });
 
     // Start the task
+    this.log('silly', `Starting task #${id}.`);
     worker!.postMessage({
       id,
       type: TASK_MESSAGE,
@@ -375,16 +379,17 @@ export class WorkerThreadManager {
    */
   protected initWorker(file: string, options?: WorkerOptions) {
     const id = uuid();
-    console.log(`[WorkerThreadManager] Spawning new worker (#${id}) from '${file}'.`);
+    this.log('debug', `Spawning new worker (#${id}) from '${file}'.`);
 
     const worker = new Worker(file, options) as ExtendedWorker;
     worker.setMaxListeners(Infinity);
+    worker.uuid = id;
 
     worker.is_online = false;
     worker.online = new Promise((resolve, reject) => {
       const msg_handler = (m: { type: string, error?: any }) => { 
         if (m.type === WORKER_READY) {
-          console.log(`[WorkerThreadManager] Worker #${id} is online.`);
+          this.log('silly', `Worker #${id} is online.`);
 
           worker.is_online = true; 
           // Remove event listener
@@ -494,10 +499,24 @@ export class WorkerThreadManager {
   protected kill(worker: PoolWorker) {
     worker.state = 'stopped';
 
-    if (worker.worker)
+    if (worker.worker) {
+      this.log('debug', `Killing worker #${worker.worker.uuid}.`);
       worker.worker.terminate();
+    }
 
     worker.worker = null;
+  }
+
+  protected log(level: 'debug' | 'silly', message: string) {
+    if (this.log_level === 'none') {
+      return;
+    }
+
+    if (this.log_level === 'debug' && level !== 'debug') {
+      return;
+    }
+
+    console.log(`[WorkerThreadManager] ${level}: ${message}`);
   }
 }
 

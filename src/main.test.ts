@@ -9,6 +9,7 @@ function sleep(ms: number) {
 const JOB_COUNT = 1000;
 
 const manager = new WorkerThreadManager;
+manager.log_level = 'silly';
 
 manager.spawn(
   /* The name of the worker pool */ 
