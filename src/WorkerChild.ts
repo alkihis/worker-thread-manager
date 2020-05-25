@@ -18,10 +18,6 @@ export class WorkerChild<TaskData = any, TaskResult = any, StartupData = any> {
     this.init();
   }
 
-  isStarted(id: string) {
-    return this.running_tasks.has(id);
-  }
-
   protected async init() {
     try {
       if (this.options.onStartup) {
@@ -80,6 +76,19 @@ export class WorkerChild<TaskData = any, TaskResult = any, StartupData = any> {
     } as WorkerSuccessMessage<TaskResult>);
   }
 
+  /**
+   * Tells if task {id} is still considered as running.
+   * Useful to know if a task has been manually stopped.
+   */
+  isStarted(id: string) {
+    return this.running_tasks.has(id);
+  }
+
+  /**
+   * Start listening of main thread messages.
+   * 
+   * This method must only be called once !
+   */
   listen() {
     parentPort!.on('message', (data: WorkerToMessage) => {
       if (data.type === TASK_MESSAGE) {
