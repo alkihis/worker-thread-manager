@@ -259,10 +259,7 @@ export class WorkerThreadManager {
    * Get the task {id}
    */
   get<T = any>(id: string) {
-    if (id in this.ids_to_jobs) {
-      return this.ids_to_jobs[id] as ThreadPromise<T>;
-    }
-    return undefined;
+    return this.ids_to_jobs[id] as ThreadPromise<T>;
   }
 
   /**
@@ -283,7 +280,7 @@ export class WorkerThreadManager {
   /**
    * Remove every task from this worker type, un-register it, and kill it.
    */
-  removeWorker(slug: string) {
+  removeType(slug: string) {
     const data = this.slug_to_data[slug];
     if (!data) {
       return;
