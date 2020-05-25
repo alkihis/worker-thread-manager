@@ -9,11 +9,8 @@ function sleep(ms: number) {
 const JOB_COUNT = 1000;
 
 const manager = new WorkerThreadManager;
-manager.log_level = 'silly';
 
-manager.spawn(
-  /* The name of the worker pool */ 
-  'task_type_1',
+const pool = manager.spawn(
   /* The path to worker script */ 
   path.resolve(__dirname, 'child.test.js'), 
   /* Options */ 
@@ -33,51 +30,53 @@ manager.spawn(
   }
 );
 
+pool.log_level = 'debug';
+
 (async () => {
   // Wait for every worker to be ready (not necessary, 
   // but assure that tasks will be immediately started when they arrive)
-  await manager.init('task_type_1');
+  await pool.init();
   
   let time = Date.now();
 
   // Start {JOB_COUNT} jobs distributed to workers.
   for (let i = 1; i <= JOB_COUNT; i++) {
-    // Start a task on 'task_type_1' pool, then register it
-    const task = manager.run<string>('task_type_1', i);
+    // Start a task on pool, then register it
+    const task = pool.run<string>(i);
     task.then(data => {
       console.log(`Job #${task.uuid} says: ${data}`);
     });
   }
 
   // Wait for every task to end
-  await manager.wait('task_type_1');
+  await pool.wait();
 
   console.log('\nPool 1 ended!');
   console.log(`Taken ${(Date.now() - time) / 1000}s.`);
 
   // Run one task
   await sleep(10000);
-  console.log("After 10s", manager.stats('task_type_1'));
+  console.log("After 10s", pool.stats());
 
   console.log('Starting one task');
-  manager.run('task_type_1', 1);
+  pool.run(1);
   await sleep(1000);
 
-  console.log("After 1 task started", manager.stats('task_type_1'));
+  console.log("After 1 task started", pool.stats());
   await sleep(12000);
 
-  console.log("After 1 task end", manager.stats('task_type_1'));
+  console.log("After 1 task end", pool.stats());
   
   console.log('Starting 25 tasks');
   for (let i = 0; i < 25; i++) 
-    manager.run('task_type_1', 1);
+    pool.run(1);
   
   await sleep(1000);
-  console.log("After 25 tasks started:", manager.stats('task_type_1'));
+  console.log("After 25 tasks started:", pool.stats());
   
   await sleep(5000);
-  console.log('After 25 tasks+ 5000ms', manager.stats('task_type_1'));
+  console.log('After 25 tasks+ 5000ms', pool.stats());
 
   await sleep(10000);
-  console.log('After 25 tasks+ 15000ms', manager.stats('task_type_1'));
+  console.log('After 25 tasks+ 15000ms', pool.stats());
 })();
