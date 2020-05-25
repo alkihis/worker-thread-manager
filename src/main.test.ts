@@ -2,7 +2,7 @@ import { WorkerThreadManager } from '.';
 import path from 'path';
 
 // Setting limit
-const JOB_COUNT = 2_000;
+const JOB_COUNT = 50;
 
 const manager = new WorkerThreadManager;
 
@@ -12,7 +12,7 @@ manager.spawn(
   /* The path to worker script */ 
   path.resolve(__dirname, 'child.test.js'), 
   /* Options: Max 4 worker instances started */ 
-  { poolLength: 4 }
+  { poolLength: 4, stopOnNoTask: 1000 * 10, spawnerThreshold: 5 }
 );
 
 // Spread tasks across workers
@@ -24,6 +24,7 @@ manager.spawn(
   for (let i = 1; i <= JOB_COUNT; i++) {
     // Start a task on 'task_type_1' pool, then register it
     const task = manager.run<string>('task_type_1', i);
+
     jobs.push(task);
 
     task.then(data => {
