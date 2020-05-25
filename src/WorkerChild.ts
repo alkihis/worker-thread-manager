@@ -1,6 +1,11 @@
 import { parentPort, workerData } from 'worker_threads';
 import { WorkerToMessage, WorkerTaskMessage, TASK_MESSAGE, REQUEST_END_MESSAGE, WorkerFailMessage, FAIL_MESSAGE, WorkerSuccessMessage, SUCCESS_MESSAGE, WORKER_READY } from './globals';
 
+export interface WorkerChildOptions<TaskData, TaskResult, StartupData> {
+  onTask(data: TaskData): TaskResult | Promise<TaskResult>;
+  onStartup?: (data?: StartupData) => any | Promise<any>;
+}
+
 export class WorkerChild<TaskData = any, TaskResult = any, StartupData = any> {
   protected waiting_tasks: WorkerTaskMessage<TaskData>[] = [];
   protected ready = false;
@@ -8,11 +13,10 @@ export class WorkerChild<TaskData = any, TaskResult = any, StartupData = any> {
   protected running_tasks = new Set<string>();
 
   constructor(
-    protected options: {
-      onTask(data: TaskData): TaskResult | Promise<TaskResult>;
-      onStartup?: (data?: StartupData) => any | Promise<any>;
-    }
-  ) {}
+    protected options: WorkerChildOptions<TaskData, TaskResult, StartupData>
+  ) {
+    this.init();
+  }
 
   isStarted(id: string) {
     return this.running_tasks.has(id);
@@ -81,7 +85,7 @@ export class WorkerChild<TaskData = any, TaskResult = any, StartupData = any> {
     } as WorkerSuccessMessage<TaskResult>);
   }
 
-  async listen() {
+  listen() {
     parentPort!.on('message', (data: WorkerToMessage) => {
       if (data.type === TASK_MESSAGE) {
         // Worker stat message
@@ -92,7 +96,7 @@ export class WorkerChild<TaskData = any, TaskResult = any, StartupData = any> {
       }
     });
 
-    this.init();
+    return this;
   }
 }
 
