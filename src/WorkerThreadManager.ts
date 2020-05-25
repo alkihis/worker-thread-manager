@@ -19,7 +19,7 @@ export class WorkerThreadManager {
   protected ids_to_jobs: { [uuid: string]: ThreadPromise<any> } = {};
   protected slug_to_data: { [slug: string]: PoolData } = {};
 
-  spawn(filename: string, slug = 'default', options?: WorkerOptions & { stopOnNoTask?: number, poolLength?: number }) {
+  spawn(slug: string, filename: string, options?: WorkerOptions & { stopOnNoTask?: number, poolLength?: number }) {
     if (!slug) {
       throw new Error('Invalid slug.');
     }
@@ -47,10 +47,13 @@ export class WorkerThreadManager {
       settings
     };
 
-    const worker = this.initWorker(filename, options);
-
-    // Register worker
-    this.register(worker, slug);
+    // start a pool of {pool_length} workers
+    for (let i = 0; i < pool_length; i++) {
+      const worker = this.initWorker(filename, options);
+  
+      // Register worker
+      this.register(worker, slug);
+    }
   }
 
   /**
@@ -102,6 +105,7 @@ export class WorkerThreadManager {
 
   protected initWorker(file: string, options?: WorkerOptions) {
     const worker = new Worker(file, options) as ExtendedWorker;
+    worker.setMaxListeners(Infinity);
 
     worker.is_online = false;
     worker.online = new Promise((resolve, reject) => {
@@ -269,6 +273,21 @@ export class WorkerThreadManager {
     return id in this.ids_to_jobs;
   }
 
+  stats(slug: string) {
+    const data = this.slug_to_data[slug];
+    if (!data) {
+      return;
+    }
+
+    return {
+      worker_count: data.pool.length,
+      active: data.pool.filter(e => e.state === 'running').length,
+      minimum_load: data.pool.reduce((prev, cur) => prev < cur.jobs.size ? prev : cur.jobs.size, 0),
+      maximum_load: data.pool.reduce((prev, cur) => prev > cur.jobs.size ? prev : cur.jobs.size, 0),
+      average_load: data.pool.reduce((sum, cur) => sum += cur.jobs.size, 0) / data.pool.length,
+    };
+  }
+
   /**
    * Kill a worker. Do not watch if running task are running, make sure everything is okay !
    */
@@ -280,7 +299,7 @@ export class WorkerThreadManager {
   /**
    * Remove every task from this worker type, un-register it, and kill it.
    */
-  removeType(slug: string) {
+  terminate(slug: string) {
     const data = this.slug_to_data[slug];
     if (!data) {
       return;
