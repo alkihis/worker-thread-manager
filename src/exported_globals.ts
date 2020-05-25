@@ -2,8 +2,6 @@ import { WorkerOptions, Worker } from "worker_threads";
 
 export interface WorkerSettings {
   stopOnNoTask: number;
-  last_timeout?: NodeJS.Timeout;
-  state: 'running' | 'stopped';
   startup_options?: WorkerOptions;
   file: string;
 }

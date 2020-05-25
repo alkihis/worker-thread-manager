@@ -3,38 +3,101 @@ import { v4 as uuid } from 'uuid';
 import { WorkerFailMessage, WorkerSuccessMessage, REQUEST_END_MESSAGE, TASK_MESSAGE, WorkerToMessage, FAIL_MESSAGE, SUCCESS_MESSAGE, WORKER_READY } from './globals';
 import { ExtendedWorker, WorkerSettings, ThreadPromise } from './exported_globals';
 
+interface PoolData {
+  pool: PoolWorker[];
+  settings: WorkerSettings;
+}
+
+interface PoolWorker {
+  worker: ExtendedWorker;
+  jobs: Set<string>;
+  timeout?: NodeJS.Timeout;
+  state: 'running' | 'stopped';
+}
+
 export class WorkerThreadManager {
   protected ids_to_jobs: { [uuid: string]: ThreadPromise<any> } = {};
-  protected slug_to_worker: { [slug: string]: ExtendedWorker } = {};
-  
-  protected worker_to_ids: Map<ExtendedWorker, Set<string>> = new Map;
-  protected worker_to_slug = new Map<ExtendedWorker, string>();
-  protected worker_to_settings = new Map<ExtendedWorker, WorkerSettings>();
+  protected slug_to_data: { [slug: string]: PoolData } = {};
 
-
-  spawn(filename: string, slug: string, options?: WorkerOptions & { stopOnNoTask?: number }) {
+  spawn(filename: string, slug = 'default', options?: WorkerOptions & { stopOnNoTask?: number, poolLength?: number }) {
     if (!slug) {
       throw new Error('Invalid slug.');
     }
+
+    if (slug in this.slug_to_data) {
+      throw new Error('This slug is already used (' + slug + ').');
+    }
   
     const stop_on_no = options?.stopOnNoTask ?? Infinity;
+    const pool_length = options?.poolLength ?? 1;
 
-    if (stop_on_no < 0) {
-      throw new Error('Worker stop time cannot be negative.');
+    if (stop_on_no < 0 || pool_length <= 0) {
+      throw new Error('Worker stop time or pool length cannot be negative.');
     }
+
+    const settings: WorkerSettings = { 
+      stopOnNoTask: stop_on_no, 
+      startup_options: options, 
+      file: filename 
+    };
+
+    // Init slug
+    this.slug_to_data[slug] = {
+      pool: [],
+      settings
+    };
 
     const worker = this.initWorker(filename, options);
 
     // Register worker
-    this.worker_to_settings.set(worker, { 
-      stopOnNoTask: stop_on_no, 
-      state: 'running', 
-      startup_options: options, 
-      file: filename 
+    this.register(worker, slug);
+  }
+
+  /**
+   * Register a worker to a pool. 
+   */
+  protected register(worker: ExtendedWorker, slug: string) {
+    this.slug_to_data[slug].pool.push({
+      worker,
+      jobs: new Set,
+      state: 'running'
     });
-    this.worker_to_slug.set(worker, slug);
-    this.worker_to_ids.set(worker, new Set);
-    this.slug_to_worker[slug] = worker;
+  }
+
+  /**
+   * Remove every worker from a pool.
+   */
+  protected unregister(slug: string) {
+    const data = this.slug_to_data[slug];
+
+    if (!data) {
+      return;
+    }
+
+    for (const worker of data.pool) {
+      this.unregisterWorker(worker);
+    }
+
+    delete this.slug_to_data[slug];
+  }
+
+  protected unregisterWorker(worker: PoolWorker) {
+    if (worker.timeout) {
+      clearTimeout(worker.timeout);
+      worker.timeout = undefined;
+    }
+
+    // Stop all running jobs of this worker
+    for (const id of worker.jobs) {
+      const job = this.ids_to_jobs[id];
+
+      if (!job) continue;
+
+      job.stop();
+      delete this.ids_to_jobs[id];
+    }
+
+    worker.jobs.clear();
   }
 
   protected initWorker(file: string, options?: WorkerOptions) {
@@ -68,41 +131,59 @@ export class WorkerThreadManager {
     return worker;
   }
   
-  protected reviveWorker(worker: ExtendedWorker, settings: WorkerSettings) {
-    const new_one = this.initWorker(settings.file, settings.startup_options);
+  protected reviveWorker(data: PoolData, index: number) {
+    const worker = data.pool[index];
+    const new_one = this.initWorker(data.settings.file, data.settings.startup_options);
 
-    // Transfer all props
-    this.worker_to_ids.set(new_one, this.worker_to_ids.get(worker)!);
-    this.worker_to_settings.set(new_one, this.worker_to_settings.get(worker)!);
-    this.worker_to_slug.set(new_one, this.worker_to_slug.get(worker)!);
-
-    const slug = this.worker_to_slug.get(new_one)!;
-    this.slug_to_worker[slug] = worker;
-    this.worker_to_settings.get(new_one)!.state = 'running';
+    worker.worker = new_one;
+    worker.state = 'running';
     
-    return new_one;
+    return worker;
+  }
+
+  protected findBestWorker(data: PoolData) {
+    let best_index = 0;
+    let best_usage = data.pool[0].jobs.size;
+
+    for (let i = 0; i < data.pool.length; i++) {
+      if (best_usage > data.pool[i].jobs.size) {
+        best_index = i;
+        best_usage = data.pool[i].jobs.size;
+      }
+    }
+
+    return best_index;
   }
 
   run<T>(worker_slug: string, data: any) {
-    let worker = this.slug_to_worker[worker_slug];
+    let pool = this.slug_to_data[worker_slug];
 
-    if (!worker) {
-      throw new Error('Undefined worker');
+    if (!pool) {
+      throw new Error('Undefined worker type');
     }
 
-    const settings = this.worker_to_settings.get(worker);
-    if (!settings) {
-      throw new Error('Undefined worker');
+    // Choose the best worker (with the minimum number of tasks)
+    const best_worker_index = this.findBestWorker(pool);
+    const best_worker = pool.pool[best_worker_index];
+
+    // Cancel kill task if any
+    if (best_worker.timeout) {
+      clearTimeout(best_worker.timeout);
+      best_worker.timeout = undefined;
     }
 
-    if (settings.state === 'stopped') {
+    // Revive the worker if stopped
+    if (best_worker.state === 'stopped') {
       // Start the worker
-      worker = this.reviveWorker(worker, settings);
+      this.reviveWorker(pool, best_worker_index);
     } 
+
+    const worker = best_worker.worker;
 
     // Get a job ID
     const id = uuid();
 
+    // Start the job
     const result = (async () => {
       await worker.online;
 
@@ -135,9 +216,13 @@ export class WorkerThreadManager {
       return job_result;
     })() as ThreadPromise<T>;
 
+    // Store the promise result to cache
     this.ids_to_jobs[id] = result;
-    this.worker_to_ids.get(worker)!.add(id);
 
+    // Add the job ID to assigned worker jobs
+    best_worker.jobs.add(id);
+
+    // Init the ThreadPromise special attributes
     result.uuid = id;
     result.worker = worker;
     result.stop = () => {
@@ -146,12 +231,17 @@ export class WorkerThreadManager {
         type: REQUEST_END_MESSAGE
       });
     };
+
+    // Assign a listener on Promise end (whatever its status)
     result.finally(() => {
+      // Remove the job reference
       delete this.ids_to_jobs[id];
-      const w = this.worker_to_ids.get(worker);
-      if (w) {
-        w.delete(id);
-      }
+
+      // Remove the job from worker
+      best_worker.jobs.delete(id);
+
+      // Start worker clean (do nothing if a job remains)
+      this.cleanWorker(pool, best_worker_index);
     });
 
     // Start the task
@@ -161,9 +251,13 @@ export class WorkerThreadManager {
       data
     });
 
+    // Return the special job promise
     return result;
   }
 
+  /**
+   * Get the task {id}
+   */
   get<T = any>(id: string) {
     if (id in this.ids_to_jobs) {
       return this.ids_to_jobs[id] as ThreadPromise<T>;
@@ -171,110 +265,56 @@ export class WorkerThreadManager {
     return undefined;
   }
 
+  /**
+   * Tells if task {id} is still started.
+   */
   exists(id: string) {
     return id in this.ids_to_jobs;
-  }
-
-  delete(id: string) {
-    if (id in this.ids_to_jobs) {
-      const worker = this.ids_to_jobs[id].worker;
-
-      const jobs = this.worker_to_ids.get(worker);
-      if (!jobs) {
-        delete this.ids_to_jobs[id];
-        return;
-      }
-
-      jobs.delete(id);
-      if (jobs.size === 0) {
-        this.cleanWorker(worker);
-      }
-    }
   }
 
   /**
    * Kill a worker. Do not watch if running task are running, make sure everything is okay !
    */
-  protected kill(worker: ExtendedWorker | string) {
-    if (typeof worker === 'string') {
-      worker = this.slug_to_worker[worker];
-
-      if (!worker) {
-        return;
-      }
-    }
-
-    const settings = this.worker_to_settings.get(worker);
-    if (settings) {
-      settings.state = 'stopped';
-    }
-
-    worker.terminate();
+  protected kill(worker: PoolWorker) {
+    worker.state = 'stopped';
+    worker.worker.terminate();
   }
 
   /**
-   * Remove every task from this worker, un-register it, and kill it.
+   * Remove every task from this worker type, un-register it, and kill it.
    */
-  removeWorker(worker: ExtendedWorker | string) {
-    if (typeof worker === 'string') {
-      worker = this.slug_to_worker[worker];
-
-      if (!worker) {
-        return;
-      }
+  removeWorker(slug: string) {
+    const data = this.slug_to_data[slug];
+    if (!data) {
+      return;
     }
 
-    const slug = this.worker_to_slug.get(worker);
-    this.worker_to_slug.delete(worker);
-
-    const settings = this.worker_to_settings.get(worker);
-    if (settings && settings.last_timeout) {
-      clearTimeout(settings.last_timeout);
-    }
-    this.worker_to_settings.delete(worker);
-
-    const jobs = this.worker_to_ids.get(worker);
-    // Stop all running jobs of this worker
-    if (jobs && jobs.size) {
-      for (const job of jobs) {
-        const prom = this.ids_to_jobs[job];
-        prom.stop();
-        
-        delete this.ids_to_jobs[job];
-      }
-    }
-    this.worker_to_ids.delete(worker);
-
-    if (slug) {
-      delete this.slug_to_worker[slug];
-    }
+    const pool = data.pool;
+  
+    this.unregister(slug);  
 
     // Ok, all cleared.
-    this.kill(worker);
+    for (const worker of pool) {
+      this.kill(worker);
+    } 
   }
 
-  protected cleanWorker(worker: ExtendedWorker) {
-    const slug = this.worker_to_slug.get(worker);
+  /**
+   * Check if worker has task. 0 task = start the worker kill process
+   */
+  protected cleanWorker(data: PoolData, index: number) {
+    const worker = data.pool[index];
 
-    if (!slug) {
-      return;
+    if (worker.timeout) {
+      clearTimeout(worker.timeout);
+      worker.timeout = undefined;
     }
 
-    const settings = this.worker_to_settings.get(worker);
-
-    if (!settings) {
-      return;
-    }
-
-    if (settings.last_timeout) {
-      clearTimeout(settings.last_timeout);
-      settings.last_timeout = undefined;
-    }
-
-    if (settings.stopOnNoTask !== Infinity) {
-      settings.last_timeout = setTimeout(() => {
+    // If worker has no jobs, start kill process
+    if (worker.jobs.size === 0 && data.settings.stopOnNoTask !== Infinity) {
+      worker.timeout = setTimeout(() => {
         this.kill(worker);
-      }, settings.stopOnNoTask);
+      }, data.settings.stopOnNoTask);
     }
   }
 }
