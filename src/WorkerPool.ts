@@ -233,12 +233,14 @@ export class WorkerPool<TaskData = any, TaskResult = any> {
     const tasks = tasks_ids.map(e => this.ids_to_jobs[e]).filter(e => e);
 
     // Await every task and ignore their errors
-    await Promise.all(tasks.map(e => e.catch(() => {})));
+    const jobs = await Promise.all(tasks.map(e => e.catch(() => undefined)));
 
     // Ok, all cleared. Kill them.
     for (const worker of pool) {
       this.kill(worker);
     } 
+
+    return jobs;
   }
 
   /**
@@ -251,7 +253,7 @@ export class WorkerPool<TaskData = any, TaskResult = any> {
     const tasks = tasks_ids.map(e => this.ids_to_jobs[e]).filter(e => e);
 
     // Await every task and ignore their errors
-    await Promise.all(tasks.map(e => e.catch(() => {})));
+    return Promise.all(tasks.map(e => e.catch(() => undefined)));
   }
 
 

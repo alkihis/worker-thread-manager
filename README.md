@@ -175,4 +175,73 @@ Every following parameter is optional.
 
 ### Options of `WorkerChild` constructor
 
+You can enable type checking when you instanciate `WorkerChild` object by using generics.
 
+```ts
+new WorkerChild<
+  /* Type of data received by worker child */
+  TaskData, 
+  /* Type of data sent by worker child at the end of a task */
+  TaskResult, 
+  /* Type of data received by worker at its startup */
+  StartupData
+>(options);
+```
+
+A `WorkerChild` takes an object with two properties, one required and one optional.
+```ts
+interface WorkerChildOptions {
+  onTask: (data: TaskData, job_uuid: string) => TaskResult | Promise<TaskResult>;
+  onStartup?: (data?: StartupData) => any | Promise<any>;
+}
+```
+
+### Methods of a `WorkerPool` instance
+
+- `.run(data: TaskData, transferList?: Array<ArrayBuffer | MessagePort>): ThreadPromise<TaskResult>`: Start a new task distributed to workers. 
+  `data` is given to worker and must respect rules defined in [Limitations](#Limitations).
+  `transferList` is an optional parameter where you should define `ArrayBuffer`s or `MessagePort`s given to worker through `data`.
+
+  Returned value, a `ThreadPromise` object, is a custom `Promise` with additionnal properties:
+  - `.uuid: string`: Job ID.
+  - `.worker: Worker`: `Worker` associated to this task (useful to get `stdin` and `stdout` streams). To send and receive data from one task, it is more recommanded to use `MessagePort` objects instead of `std` streams.
+  - `.stop()`: Send a stop message for this task. This be manually handled in your child's task handler.
+
+- `.init(): Promise<void>`: Force every worker in the pool to start and await their online status.
+
+- `.stats(): PoolStats`: Get statistics about worker occupation.
+ ```ts
+interface PoolStats {
+  /** Number of workers in the pool */
+  worker_count: number;
+  /** Number of started workers */
+  active: number;
+  /** Number of stopped workers */
+  stopped: number;
+  /** Number of jobs currently handled for every worker */
+  job_counts: number[];
+  /** Number of jobs currently handled by the least loaded worker */
+  minimum_load: number;
+  /** Number of jobs currently handled by most loaded worker */
+  maximum_load: number;
+  /** Average number of jobs per worker */
+  average_load: number;
+}
+ ```
+
+- `.join(): Promise<(TaskResult | undefined)[]>`: Await every dispatched task (failed or not) into worker pool to end. Returns their results into a arbitary order. If a task failed, `undefined` is present in result array.
+
+- `.terminate(): void`: Kill every worker in the pool.
+
+- `.joinAndTerminate(): Promise<(TaskResult | undefined)[]>`: Await every task end like `.join()`, then terminate the started workers.
+
+- `.exists(id: string): boolean`: Tells if job `id` is currently started.
+
+- `.get(id: string): ThreadPromise<TaskResult>`: Get the `ThreadPromise` associated to the given job ID. The job must exists.
+
+
+### Methods of a `WorkerChild` instance
+
+- `.listen()`: Listen for tasks sent by main thread. This method **must be called only one time**.
+
+- `.isStarted(id: string): boolean`: Tells if task `id` is still considered as started. If user requested task end, this function will return `false`.

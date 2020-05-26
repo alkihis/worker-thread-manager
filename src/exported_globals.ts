@@ -19,6 +19,23 @@ export interface ThreadPromise<T> extends Promise<T> {
   stop(): void;
 }
 
+export interface PoolStats {
+  /** Number of workers in the pool */
+  worker_count: number;
+  /** Number of started workers */
+  active: number;
+  /** Number of stopped workers */
+  stopped: number;
+  /** Number of jobs currently handled for every worker */
+  job_counts: number[];
+  /** Number of jobs currently handled by the least loaded worker */
+  minimum_load: number;
+  /** Number of jobs currently handled by most loaded worker */
+  maximum_load: number;
+  /** Average number of jobs per worker */
+  average_load: number;
+}
+
 export interface WorkerThreadManagerOptions extends WorkerOptions { 
   /**
    * Timeout started after worker ends every handled task.
