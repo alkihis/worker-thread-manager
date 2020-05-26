@@ -15,5 +15,9 @@
   },
   "devDependencies": {
     "@types/uuid": "^8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alkihis/worker-thread-manager"
   }
 }
