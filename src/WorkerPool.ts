@@ -99,7 +99,7 @@ export class WorkerPool<TaskData = any, TaskResult = any> {
     const worker = best_worker.worker!;
 
     // Get a job ID
-    const id = uuid();
+    const id: string = uuid();
 
     // Start the job
     const result = (async () => {
@@ -308,7 +308,7 @@ export class WorkerPool<TaskData = any, TaskResult = any> {
    * in order to make it a `ExtendedWorker`.
    */
   protected initWorker(file: string, options?: WorkerOptions) {
-    const id = uuid();
+    const id: string = uuid();
     this.log('debug', `Spawning new worker (#${id}) from '${file}'.`);
 
     const worker = new Worker(file, options) as ExtendedWorker;
