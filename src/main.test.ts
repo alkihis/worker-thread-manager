@@ -8,9 +8,7 @@ function sleep(ms: number) {
 // Setting limit
 const JOB_COUNT = 1000;
 
-const manager = new WorkerThreadManager;
-
-const pool = manager.spawn(
+const pool = WorkerThreadManager.spawn<number, string>(
   /* The path to worker script */ 
   path.resolve(__dirname, 'child.test.js'), 
   /* Options */ 
@@ -26,7 +24,7 @@ const pool = manager.spawn(
       If a worker doesn't have a associated task 
       during {stopOnNoTask} ms, kill it 
     */
-    stopOnNoTask: 1000 * 10, 
+    stopOnNoTask: 1000 * 10,
   }
 );
 
@@ -42,14 +40,14 @@ pool.log_level = 'debug';
   // Start {JOB_COUNT} jobs distributed to workers.
   for (let i = 1; i <= JOB_COUNT; i++) {
     // Start a task on pool, then register it
-    const task = pool.run<string>(i);
+    const task = pool.run(i);
     task.then(data => {
       console.log(`Job #${task.uuid} says: ${data}`);
     });
   }
 
   // Wait for every task to end
-  await pool.wait();
+  await pool.join();
 
   console.log('\nPool 1 ended!');
   console.log(`Taken ${(Date.now() - time) / 1000}s.`);

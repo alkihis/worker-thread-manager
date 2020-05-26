@@ -1,8 +1,7 @@
 import { WorkerPool } from './WorkerPool';
 import { WorkerThreadManagerOptions } from './exported_globals';
 
-
-export class WorkerThreadManager {
+export const WorkerThreadManager = new class WorkerThreadManager {
   public log_level: 'none' | 'debug' | 'silly' = 'none';
 
   /* PUBLIC METHODS */
@@ -12,12 +11,15 @@ export class WorkerThreadManager {
    * 
    * Specify worker options, like pool size, worker data, etc. in {options}.
    */
-  spawn(filename: string, options?: WorkerThreadManagerOptions) {  
-    const pool = new WorkerPool(filename, options);
+  spawn<TaskData = any, TaskResult = any>(
+    filename: string, 
+    options?: WorkerThreadManagerOptions
+  ) {  
+    const pool = new WorkerPool<TaskData, TaskResult>(filename, options);
     pool.log_level = this.log_level;
-    
-    return pool
+
+    return pool;
   }
-}
+}();
 
 export default WorkerThreadManager;

@@ -1,4 +1,4 @@
-import { Worker, WorkerOptions } from 'worker_threads';
+import { Worker, WorkerOptions, MessagePort } from 'worker_threads';
 import { v4 as uuid } from 'uuid';
 import { WorkerFailMessage, WorkerSuccessMessage, REQUEST_END_MESSAGE, TASK_MESSAGE, WorkerToMessage, FAIL_MESSAGE, SUCCESS_MESSAGE, WORKER_READY } from './globals';
 import { ExtendedWorker, WorkerSettings, ThreadPromise, WorkerThreadManagerOptions } from './exported_globals';
@@ -10,10 +10,10 @@ interface PoolWorker {
   state: 'running' | 'stopped';
 }
 
-export class WorkerPool {
+export class WorkerPool<TaskData = any, TaskResult = any> {
   protected pool: PoolWorker[] = [];
   protected settings: WorkerSettings;
-  protected ids_to_jobs: { [uuid: string]: ThreadPromise<any> } = {};
+  protected ids_to_jobs: { [uuid: string]: ThreadPromise<TaskResult> } = {};
 
   public log_level: 'none' | 'debug' | 'silly' = 'none';
 
@@ -51,7 +51,7 @@ export class WorkerPool {
     }
   }
 
-  
+
   /* PUBLIC METHODS */
 
   /**
@@ -79,7 +79,7 @@ export class WorkerPool {
    * 
    * Returned {ThreadPromise} fulfills when task is finished.
    */
-  run<T>(data: any) {
+  run(data: TaskData, transferList?: (ArrayBuffer | MessagePort)[]) {
     // Choose the best worker (with the minimum number of tasks)
     const best_worker_index = this.findBestWorker();
     const best_worker = this.pool[best_worker_index];
@@ -119,7 +119,7 @@ export class WorkerPool {
           }
           else if (data.type === SUCCESS_MESSAGE) {
             has_ended = true;
-            const c = data as WorkerSuccessMessage<T>;
+            const c = data as WorkerSuccessMessage<TaskResult>;
             resolve(c.data);
           }
         });
@@ -129,10 +129,10 @@ export class WorkerPool {
             reject(code);
           }
         });
-      }) as T; 
+      }) as TaskResult; 
 
       return job_result;
-    })() as ThreadPromise<T>;
+    })() as ThreadPromise<TaskResult>;
 
     // Store the promise result to cache
     this.ids_to_jobs[id] = result;
@@ -170,7 +170,7 @@ export class WorkerPool {
       id,
       type: TASK_MESSAGE,
       data
-    });
+    }, transferList);
 
     // Return the special job promise
     return result;
@@ -179,8 +179,8 @@ export class WorkerPool {
   /**
    * Get the task {id}
    */
-  get<T = any>(id: string) {
-    return this.ids_to_jobs[id] as ThreadPromise<T>;
+  get(id: string) {
+    return this.ids_to_jobs[id] as ThreadPromise<TaskResult>;
   }
 
   /**
@@ -220,14 +220,10 @@ export class WorkerPool {
   }
 
   /**
-   * Remove a worker type, but do not stop its tasks immediately.
-   * After its tasks ends, worker pool is cleared and killed.
+   * Await for every task ends, then kill every worker.
    */
-  async waitAndTerminate() {
+  async joinAndTerminate() {
     const pool = this.pool;
-
-    // Timeout after task end: 1ms
-    this.settings.stop_on_no_task = 1;
   
     this.unregister(false);  
 
@@ -248,7 +244,7 @@ export class WorkerPool {
   /**
    * Wait every task associated to this pool to end.
    */
-  async wait() {
+  async join() {
     // Get all associated task ids
     const tasks_ids = Array<string>().concat(...this.pool.map(e => [...e.jobs]));
     // Get the task objets
@@ -262,7 +258,7 @@ export class WorkerPool {
   /* PRIVATE METHODS */
 
   /**
-   * Register a worker to a pool. 
+   * Register a new worker to pool. 
    */
   protected register(worker: ExtendedWorker | null) {
     this.pool.push({
@@ -273,7 +269,7 @@ export class WorkerPool {
   }
 
   /**
-   * Remove every worker from a pool, suppress their kill timeout and stop their tasks.
+   * Suppress kill timeout and stop tasks of every worker in pool.
    */
   protected unregister(stop_tasks = true) {
     for (const worker of this.pool) {
@@ -448,6 +444,6 @@ export class WorkerPool {
       return;
     }
 
-    console.log(`[WorkerThreadManager] ${level}: ${message}`);
+    console.log(`[WorkerPool] ${level}: ${message}`);
   }
 }

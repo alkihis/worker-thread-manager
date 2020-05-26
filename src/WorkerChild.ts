@@ -2,7 +2,7 @@ import { parentPort, workerData } from 'worker_threads';
 import { WorkerToMessage, WorkerTaskMessage, TASK_MESSAGE, REQUEST_END_MESSAGE, WorkerFailMessage, FAIL_MESSAGE, WorkerSuccessMessage, SUCCESS_MESSAGE, WORKER_READY } from './globals';
 
 export interface WorkerChildOptions<TaskData, TaskResult, StartupData> {
-  onTask(data: TaskData): TaskResult | Promise<TaskResult>;
+  onTask(data: TaskData, job_uuid: string): TaskResult | Promise<TaskResult>;
   onStartup?: (data?: StartupData) => any | Promise<any>;
 }
 
@@ -45,7 +45,7 @@ export class WorkerChild<TaskData = any, TaskResult = any, StartupData = any> {
 
     // Try to complete the task
     try {
-      const result = await this.options.onTask(data.data);
+      const result = await this.options.onTask(data.data, data.id);
 
       if (this.isStarted(data.id)) {
         this.postEndMessage(data.id, result);
