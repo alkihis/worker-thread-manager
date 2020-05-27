@@ -1,6 +1,6 @@
 import { Worker, WorkerOptions, MessagePort } from 'worker_threads';
 import { v4 as uuid } from 'uuid';
-import { WorkerFailMessage, WorkerSuccessMessage, REQUEST_END_MESSAGE, TASK_MESSAGE, WorkerToMessage, FAIL_MESSAGE, SUCCESS_MESSAGE, WORKER_READY } from './globals';
+import { WorkerFailMessage, WorkerSuccessMessage, REQUEST_END_MESSAGE, TASK_MESSAGE, WorkerToMessage, FAIL_MESSAGE, SUCCESS_MESSAGE, WORKER_READY, WorkerInfoMessage, WORKER_INFO_MESSAGE } from './globals';
 import { ExtendedWorker, WorkerSettings, ThreadPromise, WorkerThreadManagerOptions } from './exported_globals';
 
 interface PoolWorker {
@@ -96,17 +96,28 @@ export class WorkerPool<TaskData = any, TaskResult = any> {
       this.reviveWorker(best_worker_index);
     } 
 
-    const worker = best_worker.worker!;
-
     // Get a job ID
     const id: string = uuid();
+    let worker: ExtendedWorker | null | undefined = undefined;
 
     // Start the job
     const result = (async () => {
+      if (worker === null) {
+        throw 'Task cancelled.';
+      }
+
+      worker = best_worker.worker!;
       await worker.online;
 
       const job_result = await new Promise((resolve, reject) => {
         let has_ended = false;
+        
+        if (!worker) {
+          reject('Task cancelled');
+          return;
+        }
+
+        result.worker = worker;
   
         worker.on('message', (data: WorkerToMessage) => {
           if (data.id !== id) {
@@ -131,6 +142,14 @@ export class WorkerPool<TaskData = any, TaskResult = any> {
         });
       }) as TaskResult; 
 
+      // Start the task
+      this.log('silly', `Starting task #${id}.`);
+      worker.postMessage({
+        id,
+        type: TASK_MESSAGE,
+        data
+      }, transferList);
+
       return job_result;
     })() as ThreadPromise<TaskResult>;
 
@@ -142,12 +161,15 @@ export class WorkerPool<TaskData = any, TaskResult = any> {
 
     // Init the ThreadPromise special attributes
     result.uuid = id;
-    result.worker = worker;
+    result.worker = undefined;
     result.stop = () => {
-      worker.postMessage({
-        id,
-        type: REQUEST_END_MESSAGE
-      });
+      if (worker) {
+        worker.postMessage({
+          id,
+          type: REQUEST_END_MESSAGE
+        });
+      }
+      worker = null;
     };
 
     // Assign a listener on Promise end (whatever its status)
@@ -164,16 +186,24 @@ export class WorkerPool<TaskData = any, TaskResult = any> {
       this.cleanWorker(best_worker_index);
     });
 
-    // Start the task
-    this.log('silly', `Starting task #${id}.`);
-    worker!.postMessage({
-      id,
-      type: TASK_MESSAGE,
-      data
-    }, transferList);
-
     // Return the special job promise
     return result;
+  }
+
+  /**
+   * Send a message to all started workers.
+   */
+  send(data: any, transferList?: (ArrayBuffer | MessagePort)[]) {
+    const workers = this.pool.filter(e => e.state === 'running' && e.worker);
+
+    let msg: WorkerInfoMessage = {
+      type: WORKER_INFO_MESSAGE,
+      data
+    };
+
+    for (const worker of workers) {
+      worker.worker!.postMessage(msg, transferList);
+    }
   }
 
   /**

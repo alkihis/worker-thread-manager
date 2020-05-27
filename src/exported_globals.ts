@@ -15,7 +15,7 @@ export interface ExtendedWorker extends Worker {
 
 export interface ThreadPromise<T> extends Promise<T> {
   uuid: string;
-  worker: ExtendedWorker;
+  worker?: ExtendedWorker;
   stop(): void;
 }
 

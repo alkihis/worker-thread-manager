@@ -4,6 +4,7 @@ export const SUCCESS_MESSAGE = '____worker_success_end';
 export const FAIL_MESSAGE = '____worker_failed_end';
 export const REQUEST_END_MESSAGE = '____worker_task_request_end';
 export const WORKER_READY = '____worker_ready';
+export const WORKER_INFO_MESSAGE = '____worker_info';
 
 export interface WorkerToMessage {
   id: string;
@@ -23,4 +24,9 @@ export interface WorkerSuccessMessage<T> extends WorkerToMessage {
 export interface WorkerFailMessage extends WorkerToMessage {
   type: typeof FAIL_MESSAGE;
   error: any;
+}
+
+export interface WorkerInfoMessage {
+  type: typeof WORKER_INFO_MESSAGE;
+  data: any;
 }
