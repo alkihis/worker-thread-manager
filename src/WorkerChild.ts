@@ -3,7 +3,7 @@ import { WorkerToMessage, WorkerTaskMessage, TASK_MESSAGE, REQUEST_END_MESSAGE, 
 
 export interface WorkerChildOptions<TaskData, TaskResult, StartupData> {
   onTask(data: TaskData, job_uuid: string): TaskResult | Promise<TaskResult>;
-  onStartup?: (data?: StartupData) => any | Promise<any>;
+  onStartup?: (data: StartupData) => any | Promise<any>;
   onMessage?: (data: any) => any;
 }
 
@@ -101,7 +101,7 @@ export class WorkerChild<TaskData = any, TaskResult = any, StartupData = any> {
       }
       else if (data.type === WORKER_INFO_MESSAGE) {
         const msg = data as unknown as WorkerInfoMessage;
-        
+
         this.options.onMessage?.(msg.data);
       }
     });
