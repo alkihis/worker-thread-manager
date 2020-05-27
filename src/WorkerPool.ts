@@ -140,15 +140,15 @@ export class WorkerPool<TaskData = any, TaskResult = any> {
             reject(code);
           }
         });
-      }) as TaskResult; 
 
-      // Start the task
-      this.log('silly', `Starting task #${id}.`);
-      worker.postMessage({
-        id,
-        type: TASK_MESSAGE,
-        data
-      }, transferList);
+         // Start the task
+        this.log('silly', `Starting task #${id}.`);
+        worker.postMessage({
+          id,
+          type: TASK_MESSAGE,
+          data
+        }, transferList);
+      }) as TaskResult; 
 
       return job_result;
     })() as ThreadPromise<TaskResult>;

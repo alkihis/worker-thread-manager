@@ -34,6 +34,12 @@ export class WorkerChild<TaskData = any, TaskResult = any, StartupData = any> {
     // Flush tasks
     this.waiting_tasks.forEach(e => this.runTask(e));
     this.waiting_tasks = [];
+
+    // Worker is ready to handle tasks
+    parentPort!.postMessage({
+      type: WORKER_READY,
+      error: this.init_error
+    });
   }
 
   protected async runTask(data: WorkerTaskMessage<TaskData>) {
@@ -104,12 +110,6 @@ export class WorkerChild<TaskData = any, TaskResult = any, StartupData = any> {
 
         this.options.onMessage?.(msg.data);
       }
-    });
-
-    // Worker is ready to handle tasks
-    parentPort!.postMessage({
-      type: WORKER_READY,
-      error: this.init_error
     });
 
     return this;
